@@ -1,0 +1,8 @@
+{
+  "name": "OPR Studio",
+  "description": "One Page Report (OPR) generator for summarizing activities with up to 6 photos, instant randomized design layouts, AI creative remix, and A4 PDF/PNG export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

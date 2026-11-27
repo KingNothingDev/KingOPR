@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #f4f5f7;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+.font-display-jakarta {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.font-display-bricolage {
+  font-family: 'Bricolage Grotesque', sans-serif;
+}
+
+.font-display-oswald {
+  font-family: 'Oswald', sans-serif;
+}
+
+.font-display-playfair {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-body-dm {
+  font-family: 'DM Sans', sans-serif;
+}
+
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.font-poster-heading {
+  font-family: 'Fredoka', 'Plus Jakarta Sans', sans-serif;
+}
+
+.font-poster-cursive {
+  font-family: 'Dancing Script', Georgia, cursive;
+}
+
+/* Editorial Infographic Poster depth & style modifier enhancements applied to ANY selected layout */
+#opr-printable-sheet[data-ai-style="playful-illustrated"] h1 {
+  font-family: 'Fredoka', 'Bricolage Grotesque', sans-serif !important;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 0 rgba(15, 23, 42, 0.14);
+}
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .rounded-2xl,
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .rounded-3xl,
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .rounded-xl {
+  box-shadow: 0 10px 22px -10px rgba(15, 23, 42, 0.22), 0 3px 0 rgba(15, 23, 42, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .rounded-full {
+  box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.22), inset 0 1.5px 2px rgba(255, 255, 255, 0.5);
+}
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .grid > div:has(> img):nth-child(odd) {
+  transform: rotate(-1.1deg);
+  box-shadow: 0 12px 24px -10px rgba(15, 23, 42, 0.3), 0 0 0 3px #ffffff;
+}
+#opr-printable-sheet[data-ai-style="playful-illustrated"] .grid > div:has(> img):nth-child(even) {
+  transform: rotate(1.1deg);
+  box-shadow: 0 12px 24px -10px rgba(15, 23, 42, 0.3), 0 0 0 3px #ffffff;
+}
+
+#opr-printable-sheet[data-ai-style="corporate-ed"] h1 {
+  letter-spacing: 0.02em;
+  text-shadow: 0 3px 10px rgba(10, 31, 82, 0.22);
+}
+#opr-printable-sheet[data-ai-style="corporate-ed"] .rounded-2xl,
+#opr-printable-sheet[data-ai-style="corporate-ed"] .rounded-3xl,
+#opr-printable-sheet[data-ai-style="corporate-ed"] .rounded-xl {
+  box-shadow: 0 12px 24px -10px rgba(10, 31, 82, 0.26), 0 2px 0 rgba(245, 158, 11, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+#opr-printable-sheet[data-ai-style="corporate-ed"] .rounded-full {
+  box-shadow: 0 4px 12px -2px rgba(10, 31, 82, 0.3), inset 0 2px 3px rgba(255, 255, 255, 0.55);
+}
+#opr-printable-sheet[data-ai-style="corporate-ed"] .grid > div:has(> img) {
+  box-shadow: 0 14px 26px -12px rgba(10, 31, 82, 0.38), 0 0 0 3px #ffffff;
+}
+
+#opr-printable-sheet[data-ai-style="futuristic-tech"] .rounded-2xl,
+#opr-printable-sheet[data-ai-style="futuristic-tech"] .rounded-3xl,
+#opr-printable-sheet[data-ai-style="futuristic-tech"] .rounded-xl {
+  box-shadow: 0 12px 28px -10px rgba(79, 70, 229, 0.28), 0 0 0 1.25px rgba(6, 182, 212, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(6px);
+}
+#opr-printable-sheet[data-ai-style="futuristic-tech"] .rounded-full {
+  box-shadow: 0 0 12px rgba(6, 182, 212, 0.38), inset 0 1.5px 2px rgba(255, 255, 255, 0.65);
+}
+#opr-printable-sheet[data-ai-style="futuristic-tech"] .grid > div:has(> img) {
+  box-shadow: 0 14px 28px -10px rgba(79, 70, 229, 0.35), 0 0 0 2.5px rgba(255, 255, 255, 0.95);
+}
+
+/* Custom subtle scrollbars for split workspace */
+.workspace-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.workspace-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workspace-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.14);
+  border-radius: 3px;
+}
+
+.workspace-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.28);
+}
+
+/* Print / Save to PDF A4 Exact Rules */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    overflow: hidden !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  #opr-print-root {
+    position: fixed !important;
+    inset: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    background: #ffffff !important;
+    z-index: 99999 !important;
+  }
+
+  #opr-print-scale-wrapper {
+    transform: scale(1) !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #opr-printable-sheet {
+    width: 210mm !important;
+    height: 297mm !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .print-hide-empty {
+    opacity: 0 !important;
+  }
+}

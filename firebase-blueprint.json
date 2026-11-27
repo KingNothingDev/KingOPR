@@ -1,0 +1,27 @@
+{
+  "entities": {
+    "OprCounter": {
+      "title": "OprCounter",
+      "description": "Tracks the global total number of One Page Reports (OPR) generated across all devices.",
+      "type": "object",
+      "properties": {
+        "totalGenerated": {
+          "type": "integer",
+          "description": "Cumulative count of OPRs generated across all devices."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last counter update."
+        }
+      },
+      "required": ["totalGenerated", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/counters/{counterId}": {
+      "schema": { "$ref": "#/entities/OprCounter" },
+      "description": "Global singleton counter document (counterId == 'global') syncing total OPRs generated across devices."
+    }
+  }
+}

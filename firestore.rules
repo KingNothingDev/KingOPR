@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny all paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Blueprint for OprCounter
+    function isValidOprCounter(data) {
+      return data.keys().hasAll(['totalGenerated', 'updatedAt'])
+        && data.keys().hasOnly(['totalGenerated', 'updatedAt'])
+        && data.totalGenerated is int
+        && data.totalGenerated >= 1
+        && data.totalGenerated <= 1000000000
+        && data.updatedAt is timestamp;
+    }
+
+    // Global OPR Generation Counter (/counters/global)
+    match /counters/{counterId} {
+      allow get: if isValidId(counterId) && counterId == 'global';
+
+      allow create: if isValidId(counterId)
+        && counterId == 'global'
+        && isValidOprCounter(incoming())
+        && incoming().totalGenerated <= 100000
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(counterId)
+        && counterId == 'global'
+        && isValidOprCounter(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['totalGenerated', 'updatedAt'])
+        && incoming().totalGenerated == existing().totalGenerated + 1
+        && incoming().updatedAt == request.time;
+    }
+  }
+}
