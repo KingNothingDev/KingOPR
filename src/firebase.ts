@@ -10,9 +10,11 @@ import {
   doc,
   getDocFromServer,
   getFirestore,
+  increment,
   onSnapshot,
   runTransaction,
   serverTimestamp,
+  updateDoc,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -199,30 +201,38 @@ export async function incrementGlobalOprCount(
 ): Promise<void> {
   const counterRef = doc(db, 'counters', 'global');
   try {
-    await runTransaction(db, async (tx) => {
-      const snap = await tx.get(counterRef);
-      if (!snap.exists()) {
-        const nextVal = Math.max(
-          1,
-          Math.min(100000, Math.floor((currentKnownCount || 1) + 1))
-        );
-        tx.set(counterRef, {
-          totalGenerated: nextVal,
-          updatedAt: serverTimestamp(),
-        });
-      } else {
-        const current = snap.data()?.totalGenerated;
-        const safeCurrent =
-          typeof current === 'number' && Number.isInteger(current) && current >= 1
-            ? current
-            : 1;
-        tx.update(counterRef, {
-          totalGenerated: safeCurrent + 1,
-          updatedAt: serverTimestamp(),
-        });
-      }
+    await updateDoc(counterRef, {
+      totalGenerated: increment(1),
+      updatedAt: serverTimestamp(),
     });
   } catch (error) {
+    const code = (error as { code?: string })?.code;
+    const msg = error instanceof Error ? error.message : String(error);
+    if (code === 'not-found' || msg.includes('No document to update')) {
+      try {
+        await runTransaction(db, async (tx) => {
+          const snap = await tx.get(counterRef);
+          if (!snap.exists()) {
+            const nextVal = Math.max(
+              1,
+              Math.min(100000, Math.floor((currentKnownCount || 1) + 1))
+            );
+            tx.set(counterRef, {
+              totalGenerated: nextVal,
+              updatedAt: serverTimestamp(),
+            });
+          } else {
+            tx.update(counterRef, {
+              totalGenerated: increment(1),
+              updatedAt: serverTimestamp(),
+            });
+          }
+        });
+        return;
+      } catch (createErr) {
+        handleFirestoreError(createErr, OperationType.CREATE, COUNTER_PATH);
+      }
+    }
     handleFirestoreError(error, OperationType.UPDATE, COUNTER_PATH);
   }
 }

@@ -217,12 +217,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const oprCountRef = useRef<number>(oprCount);
+  useEffect(() => {
+    oprCountRef.current = oprCount;
+  }, [oprCount]);
+
   // Real-time Firestore subscription to sync Total OPR Generate across devices
   useEffect(() => {
     const initialLocal = loadInitialCount();
     const unsubscribe = subscribeToGlobalOprCount(
       initialLocal,
       (remoteCount) => {
+        oprCountRef.current = remoteCount;
         setOprCount(remoteCount);
         try {
           localStorage.setItem(COUNT_STORAGE_KEY, String(remoteCount));
@@ -235,16 +241,16 @@ export default function App() {
   }, []);
 
   const incrementOprCount = useCallback(() => {
-    setOprCount((prev) => {
-      const next = prev + 1;
-      try {
-        localStorage.setItem(COUNT_STORAGE_KEY, String(next));
-      } catch {
-        // Ignore storage errors
-      }
-      void incrementGlobalOprCount(prev);
-      return next;
-    });
+    const prev = oprCountRef.current;
+    const next = prev + 1;
+    oprCountRef.current = next;
+    setOprCount(next);
+    try {
+      localStorage.setItem(COUNT_STORAGE_KEY, String(next));
+    } catch {
+      // Ignore storage errors
+    }
+    void incrementGlobalOprCount(prev);
   }, []);
 
   const pushTheme = (nextTheme: OprThemeConfig) => {
