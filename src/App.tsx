@@ -16,6 +16,16 @@ import {
   incrementGlobalOprCount,
   subscribeToGlobalOprCount,
 } from './firebase';
+import {
+  buildClientAiPoster,
+  pickClientAiSample,
+} from './utils/clientAiFallback';
+
+class StaticBackendUnavailableError extends Error {
+  constructor() {
+    super('STATIC_BACKEND_UNAVAILABLE');
+  }
+}
 
 const STORAGE_KEY = 'opr-studio-draft-v1';
 const COUNT_STORAGE_KEY = 'opr-studio-generate-count-v1';
@@ -226,9 +236,7 @@ export default function App() {
       const serverMsg =
         parsed && typeof parsed.error === 'string' ? parsed.error : null;
       if (!serverMsg && (response.status === 404 || response.status === 405)) {
-        throw new Error(
-          'AI backend is not available on static hosting (e.g. GitHub Pages). You can still use Random Format, edit all fields, and export A4 PDF/PNG.'
-        );
+        throw new StaticBackendUnavailableError();
       }
       throw new Error(
         serverMsg ||
@@ -237,12 +245,38 @@ export default function App() {
     }
 
     if (!parsed) {
-      throw new Error(
-        'Received an unexpected non-JSON response from the server. Please try again.'
-      );
+      throw new StaticBackendUnavailableError();
     }
 
     return parsed;
+  };
+
+  const applyAiPosterResult = (
+    theme: OprThemeConfig | undefined,
+    polished: Partial<OprData> | null | undefined
+  ) => {
+    if (theme) {
+      pushTheme(theme);
+    }
+
+    if (polishWithAi && polished) {
+      setData((prev) => ({
+        ...prev,
+        subtitle: polished.subtitle?.trim() || prev.subtitle,
+        objectives: polished.objectives?.trim() || prev.objectives,
+        implementation: polished.implementation?.trim() || prev.implementation,
+        impact: polished.impact?.trim() || prev.impact,
+        reflection: polished.reflection?.trim() || prev.reflection,
+      }));
+    }
+
+    setNotice({
+      type: 'info',
+      text: polishWithAi
+        ? `Generated AI Poster "${theme?.themeLabel || 'AI Creative Poster'}" and refined your report copy. Click again for another AI poster style.`
+        : `Generated AI Poster "${theme?.themeLabel || 'AI Creative Poster'}". Click again for another AI poster style.`,
+    });
+    incrementOprCount();
   };
 
   const handleAiCreativeRandom = async () => {
@@ -283,36 +317,42 @@ export default function App() {
         polished?: Partial<OprData> | null;
       };
 
-      if (result.theme) {
-        pushTheme(result.theme);
-      }
-
-      if (polishWithAi && result.polished) {
-        const p = result.polished;
-        setData((prev) => ({
-          ...prev,
-          subtitle: p.subtitle?.trim() || prev.subtitle,
-          objectives: p.objectives?.trim() || prev.objectives,
-          implementation: p.implementation?.trim() || prev.implementation,
-          impact: p.impact?.trim() || prev.impact,
-          reflection: p.reflection?.trim() || prev.reflection,
-        }));
-      }
-
-      setNotice({
-        type: 'info',
-        text: polishWithAi
-          ? `Generated AI Poster "${result.theme?.themeLabel || 'AI Creative Poster'}" and refined your report copy. Click again for another AI poster style.`
-          : `Generated AI Poster "${result.theme?.themeLabel || 'AI Creative Poster'}". Click again for another AI poster style.`,
-      });
-      incrementOprCount();
+      applyAiPosterResult(result.theme, result.polished);
     } catch (err: unknown) {
+      if (
+        err instanceof StaticBackendUnavailableError ||
+        err instanceof TypeError
+      ) {
+        const fallback = buildClientAiPoster(
+          data,
+          currentTheme.aiPoster?.variant,
+          polishWithAi
+        );
+        applyAiPosterResult(fallback.theme, fallback.polished);
+        return;
+      }
       const message =
         err instanceof Error ? err.message : 'Unable to generate AI OPR poster.';
       setNotice({ type: 'error', text: message });
     } finally {
       setIsAiLoading(false);
     }
+  };
+
+  const applySampleResult = (sample: Partial<OprData>) => {
+    setData((prev) => ({
+      ...prev,
+      ...sample,
+      language: prev.language,
+      logoUrl: prev.logoUrl,
+      photos: prev.photos,
+    }));
+    pushTheme(generateRandomTheme(currentTheme));
+    setNotice({
+      type: 'info',
+      text: 'Loaded a fresh sample activity.',
+    });
+    incrementOprCount();
   };
 
   const handleAiSample = async () => {
@@ -331,21 +371,20 @@ export default function App() {
         sample?: Partial<OprData>;
       };
       if (result.sample) {
-        setData((prev) => ({
-          ...prev,
-          ...result.sample,
-          language: prev.language,
-          logoUrl: prev.logoUrl,
-          photos: prev.photos,
-        }));
-        pushTheme(generateRandomTheme(currentTheme));
-        setNotice({
-          type: 'info',
-          text: 'Loaded a fresh AI-generated sample activity.',
-        });
-        incrementOprCount();
+        applySampleResult(result.sample);
       }
     } catch (err: unknown) {
+      if (
+        err instanceof StaticBackendUnavailableError ||
+        err instanceof TypeError
+      ) {
+        const fallbackSample = pickClientAiSample(
+          data.language,
+          data.activityTitle
+        );
+        applySampleResult(fallbackSample);
+        return;
+      }
       const message =
         err instanceof Error ? err.message : 'Could not load AI sample.';
       setNotice({ type: 'error', text: message });
