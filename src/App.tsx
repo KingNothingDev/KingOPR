@@ -563,6 +563,7 @@ export default function App() {
 
   const handleGoogleDriveLogin = async () => {
     setDriveError(null);
+    setNotice(null);
     setIsLoggingInDrive(true);
     try {
       const result = await googleSignIn();
@@ -574,6 +575,7 @@ export default function App() {
           ? err.message
           : 'Unable to sign in with Google. Please try again.';
       setDriveError(message);
+      setNotice({ type: 'error', text: message });
     } finally {
       setIsLoggingInDrive(false);
     }
@@ -842,6 +844,27 @@ export default function App() {
         </button>
       </div>
 
+      {/* Global Feedback Banner (visible across all viewports and panes) */}
+      {notice && (
+        <div
+          className={`no-print px-5 py-2.5 text-[12.5px] flex items-center justify-between gap-3 border-b shrink-0 ${
+            notice.type === 'error'
+              ? 'bg-red-50 text-red-800 border-red-200'
+              : 'bg-emerald-50 text-emerald-900 border-emerald-200'
+          }`}
+        >
+          <span>{notice.text}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="Close notice"
+            className="opacity-70 hover:opacity-100 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Main Split Studio Workspace */}
       <main className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left Form Sidebar */}
@@ -881,27 +904,6 @@ export default function App() {
               setZoomMode((z) => (z === 'fit' ? 'actual' : 'fit'))
             }
           />
-
-          {/* Subtle Inline Feedback Banner (error or AI note) */}
-          {notice && (
-            <div
-              className={`no-print px-5 py-2.5 text-[12.5px] flex items-center justify-between gap-3 border-b shrink-0 ${
-                notice.type === 'error'
-                  ? 'bg-red-50 text-red-800 border-red-200'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200'
-              }`}
-            >
-              <span>{notice.text}</span>
-              <button
-                type="button"
-                onClick={() => setNotice(null)}
-                aria-label="Close notice"
-                className="opacity-70 hover:opacity-100 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
 
           {/* Centered A4 Preview Stage */}
           <div

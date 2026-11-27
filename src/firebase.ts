@@ -29,9 +29,36 @@ export const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
 const googleProvider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => googleProvider.addScope(scope));
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+
+function formatGoogleAuthError(error: unknown): string {
+  const code = (error as { code?: string })?.code;
+  const host =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : 'this domain';
+
+  switch (code) {
+    case 'auth/unauthorized-domain':
+      return `Google Sign-In blocked for "${host}". Add "${host}" in Firebase Console → Authentication → Settings → Authorized domains (Project: ${firebaseConfig.projectId}).`;
+    case 'auth/popup-blocked':
+      return 'Sign-in popup was blocked by your browser. Please allow popups for this site and try again.';
+    case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
+      return 'Sign-in popup was closed before completing Google login. Please try again.';
+    case 'auth/operation-not-allowed':
+      return 'Google Sign-In is not enabled in Firebase Authentication for this project.';
+    case 'auth/network-request-failed':
+      return 'Network error while connecting to Google Sign-In. Please check your connection and try again.';
+    default:
+      return error instanceof Error && error.message
+        ? error.message
+        : 'Unable to sign in with Google. Please try again.';
+  }
+}
 
 export function initAuth(
   onAuthSuccess?: (user: User, token: string) => void,
@@ -65,6 +92,8 @@ export async function googleSignIn(): Promise<{
     }
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
+  } catch (error) {
+    throw new Error(formatGoogleAuthError(error));
   } finally {
     isSigningIn = false;
   }
