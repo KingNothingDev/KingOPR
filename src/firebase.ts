@@ -1,5 +1,11 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  User,
+} from 'firebase/auth';
 import {
   doc,
   getDocFromServer,
@@ -11,8 +17,69 @@ import {
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const firestoreDatabaseId =
+  (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId ||
+  'ai-studio-oprstudio-88689b67-d05e-4d28-a0c2-efd83eca5143';
+export const db = getFirestore(app, firestoreDatabaseId);
 export const auth = getAuth(app);
+
+export const SCOPES = ['https://www.googleapis.com/auth/drive'];
+
+const googleProvider = new GoogleAuthProvider();
+SCOPES.forEach((scope) => googleProvider.addScope(scope));
+
+let isSigningIn = false;
+let cachedAccessToken: string | null = null;
+
+export function initAuth(
+  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthFailure?: (user: User | null) => void
+) {
+  return onAuthStateChanged(auth, (user: User | null) => {
+    if (user) {
+      if (cachedAccessToken) {
+        onAuthSuccess?.(user, cachedAccessToken);
+      } else if (!isSigningIn) {
+        cachedAccessToken = null;
+        onAuthFailure?.(user);
+      }
+    } else {
+      cachedAccessToken = null;
+      onAuthFailure?.(null);
+    }
+  });
+}
+
+export async function googleSignIn(): Promise<{
+  user: User;
+  accessToken: string;
+}> {
+  try {
+    isSigningIn = true;
+    const result = await signInWithPopup(auth, googleProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error('Failed to obtain Google Drive access token.');
+    }
+    cachedAccessToken = credential.accessToken;
+    return { user: result.user, accessToken: cachedAccessToken };
+  } finally {
+    isSigningIn = false;
+  }
+}
+
+export async function getAccessToken(): Promise<string | null> {
+  return cachedAccessToken;
+}
+
+export function clearAccessToken(): void {
+  cachedAccessToken = null;
+}
+
+export async function logout(): Promise<void> {
+  await auth.signOut();
+  cachedAccessToken = null;
+}
 
 export enum OperationType {
   CREATE = 'create',

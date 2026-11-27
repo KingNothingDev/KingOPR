@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { toPng } from 'html-to-image';
+import { toJpeg, toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
-import { FileDown, Loader2, X } from 'lucide-react';
+import { FileDown, FolderOpen, Loader2, X } from 'lucide-react';
 import { OprData, OprLanguage, OprThemeConfig } from './types/opr';
 import {
   DEFAULT_BM_DATA,
@@ -12,14 +12,32 @@ import {
 import { OprForm } from './components/OprForm';
 import { OprSheet } from './components/OprSheet';
 import { PreviewToolbar } from './components/PreviewToolbar';
+import { User } from 'firebase/auth';
 import {
+  clearAccessToken,
+  getAccessToken,
+  googleSignIn,
   incrementGlobalOprCount,
+  initAuth,
+  logout,
   subscribeToGlobalOprCount,
 } from './firebase';
 import {
   buildClientAiPoster,
   pickClientAiSample,
 } from './utils/clientAiFallback';
+import {
+  DriveAuthExpiredError,
+  DriveUploadedFile,
+  UserDriveFolderState,
+  listUserFolderContents,
+  uploadPdfCopyToDriveFolder,
+} from './utils/googleDrive';
+import {
+  DriveSaveModal,
+  GoogleSignInButton,
+} from './components/DriveSaveModal';
+import { UserFolderModal } from './components/UserFolderModal';
 
 class StaticBackendUnavailableError extends Error {
   constructor() {
@@ -84,6 +102,21 @@ export default function App() {
   const [mobilePane, setMobilePane] = useState<'form' | 'preview'>('form');
   const [qrHovered, setQrHovered] = useState<boolean>(false);
   const [qrPinned, setQrPinned] = useState<boolean>(false);
+  const [needsDriveAuth, setNeedsDriveAuth] = useState<boolean>(true);
+  const [driveUser, setDriveUser] = useState<User | null>(null);
+  const [isLoggingInDrive, setIsLoggingInDrive] = useState<boolean>(false);
+  const [driveModalOpen, setDriveModalOpen] = useState<boolean>(false);
+  const [pendingPdfBlob, setPendingPdfBlob] = useState<Blob | null>(null);
+  const [pendingPdfName, setPendingPdfName] = useState<string>('');
+  const [isUploadingDrive, setIsUploadingDrive] = useState<boolean>(false);
+  const [driveUploadedFile, setDriveUploadedFile] =
+    useState<DriveUploadedFile | null>(null);
+  const [driveError, setDriveError] = useState<string | null>(null);
+  const [userFolderModalOpen, setUserFolderModalOpen] = useState<boolean>(false);
+  const [isLoadingUserFolder, setIsLoadingUserFolder] = useState<boolean>(false);
+  const [userFolderState, setUserFolderState] =
+    useState<UserDriveFolderState | null>(null);
+  const [userFolderError, setUserFolderError] = useState<string | null>(null);
 
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
@@ -168,6 +201,21 @@ export default function App() {
     observer.observe(host);
     return () => observer.disconnect();
   }, [recomputeScale, mobilePane]);
+
+  // Initialize Google Auth state listener (in-memory token only)
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      (user) => {
+        setDriveUser(user);
+        setNeedsDriveAuth(false);
+      },
+      (user) => {
+        setDriveUser(user);
+        setNeedsDriveAuth(true);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Real-time Firestore subscription to sync Total OPR Generate across devices
   useEffect(() => {
@@ -319,21 +367,13 @@ export default function App() {
 
       applyAiPosterResult(result.theme, result.polished);
     } catch (err: unknown) {
-      if (
-        err instanceof StaticBackendUnavailableError ||
-        err instanceof TypeError
-      ) {
-        const fallback = buildClientAiPoster(
-          data,
-          currentTheme.aiPoster?.variant,
-          polishWithAi
-        );
-        applyAiPosterResult(fallback.theme, fallback.polished);
-        return;
-      }
-      const message =
-        err instanceof Error ? err.message : 'Unable to generate AI OPR poster.';
-      setNotice({ type: 'error', text: message });
+      console.warn('Falling back to client-side AI poster generator:', err);
+      const fallback = buildClientAiPoster(
+        data,
+        currentTheme.aiPoster?.variant,
+        polishWithAi
+      );
+      applyAiPosterResult(fallback.theme, fallback.polished);
     } finally {
       setIsAiLoading(false);
     }
@@ -372,22 +412,16 @@ export default function App() {
       };
       if (result.sample) {
         applySampleResult(result.sample);
+      } else {
+        throw new StaticBackendUnavailableError();
       }
     } catch (err: unknown) {
-      if (
-        err instanceof StaticBackendUnavailableError ||
-        err instanceof TypeError
-      ) {
-        const fallbackSample = pickClientAiSample(
-          data.language,
-          data.activityTitle
-        );
-        applySampleResult(fallbackSample);
-        return;
-      }
-      const message =
-        err instanceof Error ? err.message : 'Could not load AI sample.';
-      setNotice({ type: 'error', text: message });
+      console.warn('Falling back to client-side sample generator:', err);
+      const fallbackSample = pickClientAiSample(
+        data.language,
+        data.activityTitle
+      );
+      applySampleResult(fallbackSample);
     } finally {
       setIsSampleLoading(false);
     }
@@ -448,8 +482,7 @@ export default function App() {
       throw new Error('Report preview is not ready yet.');
     }
 
-    const exportOptions = {
-      cacheBust: true,
+    const baseOptions = {
       pixelRatio: 2,
       width: 794,
       height: 1123,
@@ -467,9 +500,25 @@ export default function App() {
     };
 
     try {
-      return await toPng(node, exportOptions);
+      return await toPng(node, { ...baseOptions, cacheBust: true });
     } catch {
-      return await toPng(node, { ...exportOptions, skipFonts: true });
+      try {
+        return await toPng(node, {
+          ...baseOptions,
+          cacheBust: false,
+          skipFonts: true,
+        });
+      } catch {
+        return await toJpeg(node, {
+          ...baseOptions,
+          cacheBust: false,
+          skipFonts: true,
+          pixelRatio: 1.5,
+          quality: 0.94,
+          imagePlaceholder:
+            'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+        });
+      }
     }
   };
 
@@ -485,19 +534,125 @@ export default function App() {
     try {
       const dataUrl = await renderSheetDataUrl();
       const link = document.createElement('a');
-      link.download = `${getSafeFileName()}_OPR.png`;
+      const isJpeg = dataUrl.startsWith('data:image/jpeg');
+      link.download = `${getSafeFileName()}_OPR.${isJpeg ? 'jpg' : 'png'}`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       incrementOprCount();
-    } catch {
+    } catch (err: unknown) {
+      console.error('PNG export failed:', err);
       setNotice({
         type: 'error',
-        text: 'Could not export PNG. Please try again.',
+        text:
+          err instanceof Error && err.message
+            ? `Could not export image: ${err.message}`
+            : 'Could not export PNG. Please try again.',
       });
     } finally {
       setIsExportingPng(false);
+    }
+  };
+
+  const handleGoogleDriveLogin = async () => {
+    setDriveError(null);
+    setIsLoggingInDrive(true);
+    try {
+      const result = await googleSignIn();
+      setDriveUser(result.user);
+      setNeedsDriveAuth(false);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Unable to sign in with Google. Please try again.';
+      setDriveError(message);
+    } finally {
+      setIsLoggingInDrive(false);
+    }
+  };
+
+  const handleGoogleDriveLogout = async () => {
+    await logout();
+    setDriveUser(null);
+    setNeedsDriveAuth(true);
+    setUserFolderState(null);
+    setUserFolderModalOpen(false);
+  };
+
+  const loadUserFolder = useCallback(async () => {
+    setUserFolderError(null);
+    setIsLoadingUserFolder(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setNeedsDriveAuth(true);
+        setUserFolderModalOpen(false);
+        return;
+      }
+      const state = await listUserFolderContents(
+        token,
+        driveUser?.email,
+        driveUser?.displayName
+      );
+      setUserFolderState(state);
+    } catch (err: unknown) {
+      if (err instanceof DriveAuthExpiredError) {
+        clearAccessToken();
+        setNeedsDriveAuth(true);
+        setUserFolderModalOpen(false);
+      }
+      setUserFolderError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to load your Google Drive folder.'
+      );
+    } finally {
+      setIsLoadingUserFolder(false);
+    }
+  }, [driveUser?.displayName, driveUser?.email]);
+
+  const handleOpenUserFolder = async () => {
+    setUserFolderModalOpen(true);
+    await loadUserFolder();
+  };
+
+  const handleConfirmDriveUpload = async () => {
+    if (!pendingPdfBlob || !pendingPdfName) return;
+    setDriveError(null);
+    setIsUploadingDrive(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setNeedsDriveAuth(true);
+        setDriveError('Please sign in with Google to save a copy to Drive.');
+        return;
+      }
+      const uploaded = await uploadPdfCopyToDriveFolder(
+        pendingPdfBlob,
+        pendingPdfName,
+        token,
+        driveUser?.email,
+        driveUser?.displayName
+      );
+      setDriveUploadedFile(uploaded);
+      setNotice({
+        type: 'info',
+        text: `PDF downloaded and saved to Google Drive folder "${uploaded.folderName}" (${uploaded.name}).`,
+      });
+    } catch (err: unknown) {
+      if (err instanceof DriveAuthExpiredError) {
+        clearAccessToken();
+        setNeedsDriveAuth(true);
+      }
+      setDriveError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to save PDF copy to Google Drive.'
+      );
+    } finally {
+      setIsUploadingDrive(false);
     }
   };
 
@@ -512,17 +667,31 @@ export default function App() {
         format: 'a4',
         compress: true,
       });
-      pdf.addImage(dataUrl, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
-      pdf.save(`${getSafeFileName()}_OPR.pdf`);
+      const imageFormat = dataUrl.startsWith('data:image/jpeg')
+        ? 'JPEG'
+        : 'PNG';
+      pdf.addImage(dataUrl, imageFormat, 0, 0, 210, 297, undefined, 'FAST');
+      const fileName = `${getSafeFileName()}_OPR.pdf`;
+      const pdfBlob = pdf.output('blob');
+      pdf.save(fileName);
       incrementOprCount();
+      setPendingPdfBlob(pdfBlob);
+      setPendingPdfName(fileName);
+      setDriveUploadedFile(null);
+      setDriveError(null);
+      setDriveModalOpen(true);
       setNotice({
         type: 'info',
         text: 'A4 PDF downloaded successfully.',
       });
-    } catch {
+    } catch (err: unknown) {
+      console.error('PDF export failed:', err);
       setNotice({
         type: 'error',
-        text: 'Could not generate PDF. Please try Download PNG instead.',
+        text:
+          err instanceof Error && err.message
+            ? `Could not generate PDF: ${err.message}`
+            : 'Could not generate PDF. Please try Download PNG instead.',
       });
     } finally {
       setIsExportingPdf(false);
@@ -613,8 +782,31 @@ export default function App() {
             ) : (
               <FileDown className="w-4 h-4" />
             )}
-            <span>{isExportingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
+            <span>
+              {isExportingPdf ? 'Generating PDF...' : 'Download PDF'}
+            </span>
           </button>
+          {needsDriveAuth ? (
+            <div className="hidden sm:block">
+              <GoogleSignInButton
+                compact
+                onClick={handleGoogleDriveLogin}
+                disabled={isLoggingInDrive}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleOpenUserFolder}
+              title={`Open your Drive folder (${driveUser?.email || 'My Folder'})`}
+              className="hidden sm:inline-flex items-center gap-1.5 h-9 px-3 text-[12px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span className="max-w-[130px] truncate">
+                {driveUser?.email || 'My Folder'}
+              </span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -782,6 +974,30 @@ export default function App() {
           </div>
         </div>
       )}
+      <DriveSaveModal
+        isOpen={driveModalOpen}
+        fileName={pendingPdfName}
+        needsAuth={needsDriveAuth}
+        user={driveUser}
+        isLoggingIn={isLoggingInDrive}
+        isUploading={isUploadingDrive}
+        uploadedFile={driveUploadedFile}
+        errorMessage={driveError}
+        onClose={() => setDriveModalOpen(false)}
+        onGoogleLogin={handleGoogleDriveLogin}
+        onLogout={handleGoogleDriveLogout}
+        onConfirmUpload={handleConfirmDriveUpload}
+      />
+      <UserFolderModal
+        isOpen={userFolderModalOpen}
+        user={driveUser}
+        isLoading={isLoadingUserFolder}
+        folderState={userFolderState}
+        errorMessage={userFolderError}
+        onClose={() => setUserFolderModalOpen(false)}
+        onRefresh={loadUserFolder}
+        onLogout={handleGoogleDriveLogout}
+      />
     </div>
   );
 }
