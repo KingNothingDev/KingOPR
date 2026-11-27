@@ -225,6 +225,11 @@ export default function App() {
     if (!response.ok) {
       const serverMsg =
         parsed && typeof parsed.error === 'string' ? parsed.error : null;
+      if (!serverMsg && (response.status === 404 || response.status === 405)) {
+        throw new Error(
+          'AI backend is not available on static hosting (e.g. GitHub Pages). You can still use Random Format, edit all fields, and export A4 PDF/PNG.'
+        );
+      }
       throw new Error(
         serverMsg ||
           `AI service returned an unexpected response (HTTP ${response.status}). Please try again.`
@@ -552,7 +557,7 @@ export default function App() {
             className="h-10 w-[132px] overflow-hidden rounded-lg bg-white flex items-center justify-center shrink-0 cursor-pointer transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
           >
             <img
-              src="/assets/aistudio/buy-me-a-coffee-logo-6100_247c69aa.jpg"
+              src={`${import.meta.env.BASE_URL}assets/aistudio/buy-me-a-coffee-logo-6100_247c69aa.jpg`}
               alt="Buy Me a Coffee"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover scale-[1.65]"
@@ -726,7 +731,7 @@ export default function App() {
             </div>
             <div className="p-4 bg-slate-50 flex flex-col items-center">
               <img
-                src="/assets/aistudio/IMAGE_2026-11-26_20_31_43_8622c06c.jpg"
+                src={`${import.meta.env.BASE_URL}assets/aistudio/IMAGE_2026-11-26_20_31_43_8622c06c.jpg`}
                 alt="DuitNow QR Code"
                 referrerPolicy="no-referrer"
                 className="w-full h-auto max-h-[70vh] object-contain rounded-xl shadow-xs"
