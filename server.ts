@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '15mb' }));
 
 function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -102,9 +102,15 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   }
 }
 
+type StructuredContentPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } };
+
+type StructuredContents = string | { parts: StructuredContentPart[] };
+
 async function generateStructuredJson(
   ai: GoogleGenAI,
-  contents: string,
+  contents: StructuredContents,
   responseSchema: Schema
 ): Promise<string> {
   const deadline = Date.now() + 62000;
@@ -847,6 +853,179 @@ Rules (keep every item 6–10 words max, no bullet symbols):
     });
   } catch (err: unknown) {
     console.error('Error in /api/opr/ai-poster:', err);
+    const { status, message } = extractReadableError(err);
+    res.status(status).json({ error: message });
+  }
+});
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+]);
+
+app.post('/api/opr/ai-summary', async (req, res) => {
+  try {
+    const { data, photos } = req.body as {
+      data?: Record<string, unknown>;
+      photos?: Array<{
+        mimeType?: unknown;
+        data?: unknown;
+        caption?: unknown;
+        name?: unknown;
+      }>;
+    };
+
+    if (!data || typeof data !== 'object') {
+      res.status(400).json({ error: 'Missing report data.' });
+      return;
+    }
+
+    const ai = getGeminiClient();
+    const isEn = data.language === 'en';
+    const language = isEn ? 'English' : 'Bahasa Melayu';
+
+    const validPhotos = Array.isArray(photos)
+      ? photos
+          .slice(0, 6)
+          .map((p, idx) => {
+            const mimeType =
+              typeof p?.mimeType === 'string'
+                ? p.mimeType.trim().toLowerCase()
+                : '';
+            const base64 = typeof p?.data === 'string' ? p.data.trim() : '';
+            const caption =
+              typeof p?.caption === 'string' ? p.caption.trim() : '';
+            const name = typeof p?.name === 'string' ? p.name.trim() : '';
+            if (!ALLOWED_IMAGE_MIMES.has(mimeType) || !base64) {
+              return null;
+            }
+            return {
+              idx: idx + 1,
+              mimeType,
+              base64,
+              caption,
+              name,
+            };
+          })
+          .filter(
+            (
+              item
+            ): item is {
+              idx: number;
+              mimeType: string;
+              base64: string;
+              caption: string;
+              name: string;
+            } => item !== null
+          )
+      : [];
+
+    const photoNotes =
+      validPhotos.length > 0
+        ? validPhotos
+            .map((p) => {
+              const details = [
+                p.caption ? `caption="${p.caption}"` : '',
+                p.name ? `file="${p.name}"` : '',
+              ]
+                .filter(Boolean)
+                .join(', ');
+              return `Photo ${p.idx}${details ? ` (${details})` : ''}`;
+            })
+            .join('; ')
+        : 'No photos attached.';
+
+    const promptText = `You are assisting an educator preparing a One Page Report (OPR) strictly in ${language}.
+Analyze the Activity Information AND examine all attached Activity Photos (visual scene, activities shown, participants, setting, equipment/banners) to suggest concise, realistic OPR bullet points.
+
+Activity Information:
+- Organization: ${String(data.organizationName || 'Not specified')}
+- Organizer Unit: ${String(data.organizerUnit || 'Not specified')}
+- Activity Title: ${String(data.activityTitle || 'Not specified')}
+- Subtitle: ${String(data.subtitle || 'Not specified')}
+- Date: ${String(data.date || 'Not specified')} | Day: ${String(data.day || 'Not specified')} | Time: ${String(data.time || 'Not specified')}
+- Venue: ${String(data.venue || 'Not specified')}
+- Target Group: ${String(data.targetGroup || 'Not specified')}
+- Attached Photos (${validPhotos.length}): ${photoNotes}
+
+Requirements:
+- Return up to 3 concise points (2 to 3 points) for EACH of the 4 sections below, strictly in ${language}:
+  1. objectives: Clear program objectives aligned with the title, target group, and activity photos.
+  2. implementation: Perlaksanaan / Aktiviti — concrete steps/activities actually carried out, incorporating details observed in the photos and venue/time metadata.
+  3. impact: Impak — tangible outcomes, participation engagement, and learning/community benefits visible or implied by the activity.
+  4. reflection: Rumusan — concise overall wrap-up, key takeaway, and practical next-step recommendation (up to 3 points).
+- Keep each point to 1 crisp sentence (8–16 words max), with NO leading bullets ("-", "•") or numbering ("1.").`;
+
+    const parts: StructuredContentPart[] = [
+      ...validPhotos.map((p) => ({
+        inlineData: {
+          mimeType: p.mimeType,
+          data: p.base64,
+        },
+      })),
+      { text: promptText },
+    ];
+
+    const schema: Schema = {
+      type: Type.OBJECT,
+      properties: {
+        objectives: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Up to 3 concise objective points.',
+        },
+        implementation: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Up to 3 concise implementation/activity execution points.',
+        },
+        impact: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Up to 3 concise impact/outcome points.',
+        },
+        reflection: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Up to 3 concise summary/rumusan points.',
+        },
+      },
+      required: ['objectives', 'implementation', 'impact', 'reflection'],
+    };
+
+    const raw = await generateStructuredJson(ai, { parts }, schema);
+    const parsed = JSON.parse(raw) as {
+      objectives?: unknown;
+      implementation?: unknown;
+      impact?: unknown;
+      reflection?: unknown;
+    };
+
+    const cleanPoints = (val: unknown): string =>
+      Array.isArray(val)
+        ? val
+            .map((item) =>
+              String(item ?? '')
+                .replace(/^[\s•\-*0-9.)]+/, '')
+                .trim()
+            )
+            .filter(Boolean)
+            .slice(0, 3)
+            .join('\n')
+        : '';
+
+    res.json({
+      summary: {
+        objectives: cleanPoints(parsed.objectives),
+        implementation: cleanPoints(parsed.implementation),
+        impact: cleanPoints(parsed.impact),
+        reflection: cleanPoints(parsed.reflection),
+      },
+    });
+  } catch (err: unknown) {
+    console.error('Error in /api/opr/ai-summary:', err);
     const { status, message } = extractReadableError(err);
     res.status(status).json({ error: message });
   }

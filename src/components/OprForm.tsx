@@ -3,6 +3,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ImagePlus,
+  Loader2,
+  Sparkles,
   Trash2,
   Upload,
   X,
@@ -15,6 +17,8 @@ interface OprFormProps {
   onChange: (next: OprData) => void;
   onLanguageSwitch: (lang: OprLanguage) => void;
   photoInputRef: React.RefObject<HTMLInputElement | null>;
+  onAiReportSummary: () => void;
+  isSummaryAiLoading: boolean;
 }
 
 const MAX_PHOTOS = 6;
@@ -24,6 +28,8 @@ export const OprForm: React.FC<OprFormProps> = ({
   onChange,
   onLanguageSwitch,
   photoInputRef,
+  onAiReportSummary,
+  isSummaryAiLoading,
 }) => {
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -534,11 +540,29 @@ export const OprForm: React.FC<OprFormProps> = ({
 
         {/* Section 4: Report Summary */}
         <section className="p-5 space-y-3.5">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[13px] font-bold text-slate-900">
-              04. Report Summary
-            </h3>
-            <span className="text-[11.5px] text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h3 className="text-[13px] font-bold text-slate-900">
+                04. Report Summary
+              </h3>
+              <button
+                type="button"
+                disabled={isSummaryAiLoading}
+                onClick={onAiReportSummary}
+                title="Suggest up to 3 points each based on Activity Information & Photos"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] font-semibold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors disabled:opacity-60 cursor-pointer shrink-0 whitespace-nowrap"
+              >
+                {isSummaryAiLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isSummaryAiLoading ? 'Summarizing...' : 'AI Report Summary'}
+                </span>
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-500 whitespace-nowrap">
               One line per bullet point
             </span>
           </div>

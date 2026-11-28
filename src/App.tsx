@@ -24,8 +24,10 @@ import {
 } from './firebase';
 import {
   buildClientAiPoster,
+  buildClientAiSummary,
   pickClientAiSample,
 } from './utils/clientAiFallback';
+import { downscaleDataUrlForAi } from './utils/imageUtils';
 import {
   DriveAuthExpiredError,
   DriveUploadedFile,
@@ -91,6 +93,7 @@ export default function App() {
   const [polishWithAi, setPolishWithAi] = useState<boolean>(true);
   const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
   const [isSampleLoading, setIsSampleLoading] = useState<boolean>(false);
+  const [isSummaryAiLoading, setIsSummaryAiLoading] = useState<boolean>(false);
   const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const [zoomMode, setZoomMode] = useState<'fit' | 'actual'>('fit');
@@ -430,6 +433,100 @@ export default function App() {
       applySampleResult(fallbackSample);
     } finally {
       setIsSampleLoading(false);
+    }
+  };
+
+  const handleAiReportSummary = async () => {
+    setNotice(null);
+    setIsSummaryAiLoading(true);
+    try {
+      const preparedPhotos = (
+        await Promise.all(
+          data.photos.slice(0, 6).map(async (photo) => {
+            const compact = await downscaleDataUrlForAi(photo.dataUrl, 640, 0.78);
+            if (!compact) return null;
+            return {
+              mimeType: compact.mimeType,
+              data: compact.data,
+              caption: photo.caption,
+              name: photo.name,
+            };
+          })
+        )
+      ).filter((item): item is NonNullable<typeof item> => item !== null);
+
+      const response = await fetch('/api/opr/ai-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          data: {
+            language: data.language,
+            organizationName: data.organizationName,
+            organizerUnit: data.organizerUnit,
+            activityTitle: data.activityTitle,
+            subtitle: data.subtitle,
+            date: data.date,
+            day: data.day,
+            time: data.time,
+            venue: data.venue,
+            targetGroup: data.targetGroup,
+          },
+          photos: preparedPhotos,
+        }),
+      });
+
+      const result = (await parseApiResponse(response)) as {
+        summary?: {
+          objectives?: string;
+          implementation?: string;
+          impact?: string;
+          reflection?: string;
+        };
+      };
+
+      if (!result.summary) {
+        throw new StaticBackendUnavailableError();
+      }
+
+      setData((prev) => ({
+        ...prev,
+        objectives: result.summary?.objectives || prev.objectives,
+        implementation: result.summary?.implementation || prev.implementation,
+        impact: result.summary?.impact || prev.impact,
+        reflection: result.summary?.reflection || prev.reflection,
+      }));
+      setNotice({
+        type: 'info',
+        text: `AI Report Summary generated${preparedPhotos.length > 0 ? ` using Activity Information & ${preparedPhotos.length} photo(s)` : ' from Activity Information'}.`,
+      });
+    } catch (err: unknown) {
+      if (err instanceof StaticBackendUnavailableError) {
+        const fallback = buildClientAiSummary(data);
+        setData((prev) => ({
+          ...prev,
+          objectives: fallback.objectives,
+          implementation: fallback.implementation,
+          impact: fallback.impact,
+          reflection: fallback.reflection,
+        }));
+        setNotice({
+          type: 'info',
+          text: 'Suggested Report Summary points from your Activity Information & photo captions.',
+        });
+      } else {
+        setNotice({
+          type: 'error',
+          text:
+            err instanceof Error && err.message
+              ? err.message
+              : 'Could not generate AI Report Summary. Please try again.',
+        });
+      }
+    } finally {
+      setIsSummaryAiLoading(false);
     }
   };
 
@@ -878,6 +975,8 @@ export default function App() {
             onChange={setData}
             onLanguageSwitch={handleLanguageSwitch}
             photoInputRef={photoInputRef}
+            onAiReportSummary={handleAiReportSummary}
+            isSummaryAiLoading={isSummaryAiLoading}
           />
         </aside>
 

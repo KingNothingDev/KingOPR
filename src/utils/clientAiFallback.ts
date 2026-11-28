@@ -510,3 +510,88 @@ export function pickClientAiSample(
   const candidates = filtered.length > 0 ? filtered : pool;
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
+
+export function buildClientAiSummary(data: OprData): {
+  objectives: string;
+  implementation: string;
+  impact: string;
+  reflection: string;
+} {
+  const isEn = data.language === 'en';
+  const title =
+    data.activityTitle.trim() || (isEn ? 'School Program' : 'Program Sekolah');
+  const target =
+    data.targetGroup.trim() ||
+    (isEn ? 'all target participants' : 'semua kumpulan sasaran');
+  const venue =
+    data.venue.trim() || (isEn ? 'the designated venue' : 'lokasi yang ditetapkan');
+  const photoCaptions = data.photos
+    .map((p) => p.caption.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const photoCount = data.photos.length;
+
+  if (isEn) {
+    const objectives = [
+      `Deliver engaging hands-on learning and active participation during ${title}.`,
+      `Strengthen collaboration, confidence, and practical competencies among ${target}.`,
+      `Evaluate program outcomes systematically to guide continuous improvement.`,
+    ];
+    const implementation = [
+      `Opened ${title} at ${venue} with participant briefing and resource setup.`,
+      photoCaptions.length > 0
+        ? `Executed core guided sessions highlighted in attached photos (${photoCaptions.join(', ')}).`
+        : `Facilitated structured group activities and interactive sessions for ${target}.`,
+      photoCount > 0
+        ? `Documented ${photoCount} key activity moments and consolidated participant feedback.`
+        : `Completed closing review and documented participant progress across all stations.`,
+    ];
+    const impact = [
+      `Achieved enthusiastic participation and strong task completion among ${target}.`,
+      `Enhanced teamwork, practical understanding, and participant engagement throughout the session.`,
+      `Generated clear implementation insights for follow-up enrichment activities.`,
+    ];
+    const reflection = [
+      `${title} ran smoothly at ${venue} with strong coordination among organizers.`,
+      `Participants responded positively to hands-on segments and collaborative tasks.`,
+      `Future editions can build on this momentum with structured follow-up sharing sessions.`,
+    ];
+    return {
+      objectives: objectives.join('\n'),
+      implementation: implementation.join('\n'),
+      impact: impact.join('\n'),
+      reflection: reflection.join('\n'),
+    };
+  }
+
+  const objectives = [
+    `Memperkasa penglibatan aktif serta kefahaman peserta sepanjang ${title}.`,
+    `Memupuk kerjasama berpasukan, keyakinan diri dan kemahiran aplikasi dalam kalangan ${target}.`,
+    `Menilai keberkesanan pelaksanaan program sebagai panduan penambahbaikan berterusan.`,
+  ];
+  const implementation = [
+    `Sesi dimulakan dengan taklimat penyelarasan dan persiapan peserta di ${venue}.`,
+    photoCaptions.length > 0
+      ? `Aktiviti teras dijalankan mengikut fokus bergambar (${photoCaptions.join(', ')}).`
+      : `Pelaksanaan aktiviti berstruktur serta bimbingan kumpulan kepada ${target}.`,
+    photoCount > 0
+      ? `Dokumentasi ${photoCount} foto pelaksanaan dirakam bersama rumusan dapatan peserta.`
+      : `Sesi penutup dan pengumpulan maklum balas dilaksanakan dengan teratur.`,
+  ];
+  const impact = [
+    `Mencapai penyertaan memberangsangkan serta komitmen tinggi daripada ${target}.`,
+    `Meningkatkan kemahiran praktikal, keyakinan dan semangat kerjasama antara peserta.`,
+    `Menghasilkan dapatan positif yang menyokong perancangan aktiviti susulan.`,
+  ];
+  const reflection = [
+    `Program ${title} berjaya dilaksanakan dengan lancar hasil kerjasama padu semua pihak di ${venue}.`,
+    `Pendekatan amali serta aktiviti berkumpulan mendapat maklum balas yang sangat positif.`,
+    `Cadangan penambahbaikan adalah meneruskan sesi pengukuhan berkala pada fasa seterusnya.`,
+  ];
+  return {
+    objectives: objectives.join('\n'),
+    implementation: implementation.join('\n'),
+    impact: impact.join('\n'),
+    reflection: reflection.join('\n'),
+  };
+}
